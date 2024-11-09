@@ -17,68 +17,81 @@ import io.github.cdimascio.dotenv.Dotenv;
 
 public class SendEmailThread implements Runnable {
 
-    private final Email email;
     private static final Dotenv dotenv = Dotenv.configure().load();
+
+    // Variables configuradas dinámicamente
+    private final static String HOST;
+    private final static String PORT_SMTP;
+    private final static String PROTOCOL;
+    private final static String USER;
+    private final static String MAIL;
+    private final static String MAIL_PASSWORD;
+    private static final Properties properties = new Properties();
+
+    static {
+        String server = dotenv.get("SMTP_SERVER");
+
+        if ("gmail".equalsIgnoreCase(server)) {
+            HOST = dotenv.get("SMTP_HOST_GMAIL");
+            PORT_SMTP = dotenv.get("SMTP_PORT_GMAIL");
+            PROTOCOL = dotenv.get("SMTP_PROTOCOL_GMAIL");
+            USER = dotenv.get("SMTP_USER_GMAIL");
+            MAIL = dotenv.get("SMTP_MAIL_GMAIL");
+            MAIL_PASSWORD = dotenv.get("SMTP_PASSWORD_GMAIL");
+
+            // Configuración de propiedades para Gmail
+            properties.setProperty("mail.smtp.host", HOST);
+            properties.setProperty("mail.smtp.port", PORT_SMTP);
+            properties.setProperty("mail.smtp.auth", "true");
+            properties.setProperty("mail.smtp.starttls.enable", "true");
+            properties.setProperty("mail.smtp.ssl.enable", "true");
+
+        } else if ("tecnoweb".equalsIgnoreCase(server)) {
+            HOST = dotenv.get("SMTP_HOST_TECNOWEB");
+            PORT_SMTP = dotenv.get("SMTP_PORT_TECNOWEB");
+            PROTOCOL = "smtp";  // Protocolo fijo para tecnoweb
+            USER = dotenv.get("SMTP_USER_TECNOWEB");
+            MAIL = dotenv.get("SMTP_MAIL_TECNOWEB");
+            MAIL_PASSWORD = dotenv.get("SMTP_PASSWORD_TECNOWEB");
+
+            // Configuración de propiedades para Tecnoweb
+            properties.setProperty("mail.smtp.host", HOST);
+            properties.setProperty("mail.smtp.port", PORT_SMTP);
+            properties.setProperty("mail.smtp.auth", "false");
+            properties.setProperty("mail.smtp.starttls.enable", "false");
+            //properties.setProperty("mail.smtp.localhost", "tecnoweb.org.bo");
+        } else {
+            throw new IllegalArgumentException("Servidor SMTP no reconocido. Configura 'SMTP_SERVER' en el archivo .env como 'gmail' o 'tecnoweb'.");
+        }
+    }
+
+    private final Email email;
 
     public SendEmailThread(Email email) {
         this.email = email;
     }
 
-    private static String loadEnvVar(String name) {
-        return dotenv.get(name);
-    }
-
-    private Properties configureSMTPProperties() {
-        Properties properties = new Properties();
-        String server = loadEnvVar("SMTP_SERVER");
-
-        if ("gmail".equalsIgnoreCase(server)) {
-            properties.setProperty("mail.smtp.host", loadEnvVar("SMTP_HOST_GMAIL"));
-            properties.setProperty("mail.smtp.port", loadEnvVar("SMTP_PORT_GMAIL"));
-            properties.setProperty("mail.smtp.ssl.enable", "true");
-            properties.setProperty("mail.smtp.auth", "true");
-        } else if ("tecnoweb".equalsIgnoreCase(server)) {
-            properties.setProperty("mail.smtp.host", loadEnvVar("SMTP_HOST_TECNOWEB"));
-            properties.setProperty("mail.smtp.port", loadEnvVar("SMTP_PORT_TECNOWEB"));
-            properties.setProperty("mail.smtp.auth", "false");
-            properties.setProperty("mail.smtp.starttls.enable", "false");
-        }
-        // Agrega aquí más configuraciones para otros dominios si es necesario
-
-        return properties;
-    }
-
-    private PasswordAuthentication getCredentials() {
-        String server = loadEnvVar("SMTP_SERVER");
-
-        if ("gmail".equalsIgnoreCase(server)) {
-            return new PasswordAuthentication(loadEnvVar("SMTP_USER_GMAIL"), loadEnvVar("SMTP_PASSWORD_GMAIL"));
-        } else if ("tecnoweb".equalsIgnoreCase(server)) {
-            return new PasswordAuthentication(loadEnvVar("SMTP_USER_TECNOWEB"), loadEnvVar("SMTP_PASSWORD_TECNOWEB"));
-        }
-        return null; // Devuelve null si no hay autenticación
-    }
-
     @Override
     public void run() {
+        // Uso de las propiedades ya configuradas condicionalmente
+        Session session = Session.getDefaultInstance(properties, new javax.mail.Authenticator() {
+            @Override
+            protected PasswordAuthentication getPasswordAuthentication() {
+                return new PasswordAuthentication(USER, MAIL_PASSWORD);
+            }
+        });
+
         try {
-            Properties properties = configureSMTPProperties();
-
-            Session session = Session.getDefaultInstance(properties, new javax.mail.Authenticator() {
-                @Override
-                protected PasswordAuthentication getPasswordAuthentication() {
-                    return getCredentials();
-                }
-            });
-
             MimeMessage message = new MimeMessage(session);
-            message.setFrom(new InternetAddress(loadEnvVar("SMTP_USER_TECNOWEB"))); // Remitente, ajusta según tu servidor
-            message.setRecipients(MimeMessage.RecipientType.TO, InternetAddress.parse(email.getTo()));
+            message.setFrom(new InternetAddress(MAIL));
+
+            InternetAddress[] toAddresses = {new InternetAddress(email.getTo())};
+            message.setRecipients(MimeMessage.RecipientType.TO, toAddresses);
             message.setSubject(email.getSubject());
 
-            Multipart multipart = new MimeMultipart();
             MimeBodyPart htmlPart = new MimeBodyPart();
             htmlPart.setContent(email.getMessage(), "text/html; charset=utf-8");
+            Multipart multipart = new MimeMultipart();
             multipart.addBodyPart(htmlPart);
 
             message.setContent(multipart);
